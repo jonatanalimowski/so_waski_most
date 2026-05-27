@@ -2,10 +2,12 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <semaphore.h>
+#include <time.h>
 
-int cars_bridge_amnt = 0;
-int car_on_bridge = 0;
-int A_city = 0;
+int cars_bridge_amt = 0;
+int car_on_bridge = -1;
+int A_city = 10;
 int A_waiting = 0;
 int B_city = 0;
 int B_waiting = 0;
@@ -15,40 +17,77 @@ typedef enum {
 	DRIVING_BA,
 	EMPTY
 } bridge_state;
-bridge_state = EMPTY;
+bridge_state current_state = EMPTY;
+
+sem_t bridge_sem;
+sem_t state_sem;
 
 void print_state() {
 	switch (bridge_state) {
 		case EMPTY:
-			printf("A-%d %d>>> [BRAK] <<<%d %d-B", A_city, A_waiting, B_waiting, B_city);
+			printf("A-%d %d>>> [BRAK] <<<%d %d-B\n", A_city, A_waiting, B_waiting, B_city);
+			break;
 
 		case DRIVING_AB:
-			printf("A-%d %d>>> [>>%d>>] <<<%d %d-B", A_city, A_waiting, car_on_bridge, B_waiting, B_city);
+			printf("A-%d %d>>> [>>%d>>] <<<%d %d-B\n", A_city, A_waiting, car_on_bridge, B_waiting, B_city);
+			break;
 
 		case DRIVING_BA:
-			printf("A-%d %d>>> [<<%d<<] <<<%d %d-B", A_city, A_waiting, car_on_bridge, B_waiting, B_city);
+			printf("A-%d %d>>> [<<%d<<] <<<%d %d-B\n", A_city, A_waiting, car_on_bridge, B_waiting, B_city);
+			break;
 	}
 }
 
 void* car_thread(void* arg) {
     int car_id = *(int*)arg;
+    char city = 'A';
     free(arg);
 
-    printf("[Samochód %d] Uruchomiłem się i zaczynam jazdę!\n", car_id);
+    printf("[Samochód %d] Skonczyl inicjalizacje\n", car_id);
 
     for (int i = 0; i < 3; i++) {
-        printf("[Samochód %d] Dojechałem do mostu i czekam...\n", car_id);
+        printf("[Samochód %d] Stoi w miescie %c\n", car_id, city);
+	sleep(rand() % 5 + 1);
 
-	while (cars_on_bridge != 0) {
-		sleep(1);
+	// Proba wjazdu
+	// Popros o sem do zmiany danych
+	if (city == 'A') {
+		A_city--;
+		A_waiting++;
+	}
+	else {
+		B_city--;
+		B_waiting++;
+	}
+	// Odblokuj sem do zmiany danych
+
+	// Popros o sem do mostu
+	// Popros o sem do danych
+
+	// Sekcja krytyczna !
+	if (city == 'A') {
+		A_waiting--;
+		current_state = DRIVING_AB;
+	}
+	else {
+		B_waiting--;
+		current_state = DRIVING_BA;
 	}
 
-        printf("[Samochód %d] >>> Przejeżdżam przez most >>>\n", car_id);
-	cars_on_bridge += 1;
-        usleep(500000);
+	car_on_bridge = car_id;
+	print_state();
+        printf("[Samochód %d] Przejezdza przez most\n", car_id);
+	// odblokuj sem do zmiany danych
 
-        printf("[Samochód %d] Zjechałem z mostu, jadę odpocząć.\n", car_id);
-	cars_on_bridge -= 1;
+	sleep(rand() % 5 + 1);
+	current_state = EMPTY;
+	// odblokuj sem do mostu
+	// Sekcja krytyczna !
+
+	// Dopisac
+	if (city == 'A') city = 'B';
+	else city = 'A';
+        printf("[Samochód %d] Skonczyl przejazd, jest teraz w %c\n", car_id, city);
         sleep(rand() % 3 + 1);
     }
 
