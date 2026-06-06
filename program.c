@@ -7,7 +7,7 @@
 
 int cars_bridge_amt = 0;
 int car_on_bridge = -1;
-int A_city = 10;
+int A_city = 0;
 int A_waiting = 0;
 int B_city = 0;
 int B_waiting = 0;
@@ -23,7 +23,7 @@ sem_t bridge_sem;
 sem_t state_sem;
 
 void print_state() {
-	switch (bridge_state) {
+	switch (current_state) {
 		case EMPTY:
 			printf("A-%d %d>>> [BRAK] <<<%d %d-B\n", A_city, A_waiting, B_waiting, B_city);
 			break;
@@ -50,7 +50,8 @@ void* car_thread(void* arg) {
 	sleep(rand() % 5 + 1);
 
 	// Proba wjazdu
-	// Popros o sem do zmiany danych
+	// to chyba tez teoretycznie sekcja krytyczna
+	sem_wait(&state_sem);
 	if (city == 'A') {
 		A_city--;
 		A_waiting++;
@@ -59,10 +60,11 @@ void* car_thread(void* arg) {
 		B_city--;
 		B_waiting++;
 	}
-	// Odblokuj sem do zmiany danych
+	sem_post(&state_sem);
 
-	// Popros o sem do mostu
-	// Popros o sem do danych
+
+	sem_wait(&bridge_sem);
+	sem_wait(&state_sem);
 
 	// Sekcja krytyczna !
 	if (city == 'A') {
@@ -76,19 +78,30 @@ void* car_thread(void* arg) {
 
 	car_on_bridge = car_id;
 	print_state();
+
+	sem_post(&state_sem);
+
         printf("[Samochód %d] Przejezdza przez most\n", car_id);
-	// odblokuj sem do zmiany danych
 
 	sleep(rand() % 5 + 1);
-	current_state = EMPTY;
-	// odblokuj sem do mostu
-	// Sekcja krytyczna !
 
-	// Dopisac
-	if (city == 'A') city = 'B';
-	else city = 'A';
+	sem_wait(&state_sem);
+	current_state = EMPTY;
+	car_on_bridge -= 1;
+
+	if (city == 'A') {
+		city = 'B';
+		B_city++;
+	}
+	else {
+		city = 'A';
+		A_city++;
+	}
+	print_state();
+
+	sem_post(&state_sem);
+	sem_post(&bridge_sem);
         printf("[Samochód %d] Skonczyl przejazd, jest teraz w %c\n", car_id, city);
-        sleep(rand() % 3 + 1);
     }
 
     printf("[Samochód %d] Kończę działanie.\n", car_id);
@@ -107,7 +120,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    A_city = N;
     srand(time(NULL));
+
+    sem_init(&bridge_sem, 0, 1);
+    sem_init(&state_sem, 0, 1);
 
     pthread_t* threads = malloc(N * sizeof(pthread_t));
     printf("Tworzenie %d wątków (samochodów)...\n", N);
@@ -127,7 +144,9 @@ int main(int argc, char* argv[]) {
     }
 
     free(threads);
-    printf("Wszystkie samochody zakończyły jazdę.\n");
+    sem_destroy(&bridge_sem);
+    sem_destroy(&state_sem);
 
+    printf("Wszystkie samochody zakończyły jazdę.\n");
     return 0;
 }
